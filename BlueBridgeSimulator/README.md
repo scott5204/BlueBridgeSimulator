@@ -10,6 +10,12 @@
 
 ---
 
+## 系统架构
+
+![系统架构](docs/images/system-architecture.png)
+
+四层解耦：GUI → 板级模型 → STM32 外设模型 → CPU（Unicorn）；Keil 通过 AGDI 驱动与 Debug IPC 命名管道接入调试接口层。
+
 ## 功能特性
 
 - **真实 CPU**：Unicorn 执行真实 ARM 指令（非简化模拟），1:1 实时运行

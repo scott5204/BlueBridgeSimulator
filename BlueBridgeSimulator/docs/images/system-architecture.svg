@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 712" width="720" height="712" role="img" aria-label="BlueBridgeSimulator 系统框图">
+  <title>BlueBridgeSimulator 系统框图</title>
+  <style>
+    .nodeR { fill: #F7F7F8; stroke: rgba(23, 23, 23, 0.14); stroke-width: 1; }
+    .nodeR.ext { stroke: rgba(82, 82, 91, 0.45); }
+    .boundary { fill: #F5F5F7; stroke: rgba(23, 23, 23, 0.14); stroke-width: 1; stroke-dasharray: 6 5; }
+    .t { fill: #171717; font: 500 14px "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif; }
+    .s { fill: #52525B; font: 400 12px "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif; }
+    .ctitle { fill: #52525B; font: 500 12px "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif; }
+    .conn { stroke: rgba(82, 82, 91, 0.7); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+    .connB { stroke: #4B3FE3; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+    .arrowN { fill: rgba(82, 82, 91, 0.75); }
+    .arrowB { fill: #4B3FE3; }
+    .cap { fill: #FFFFFF; stroke: rgba(23, 23, 23, 0.14); }
+    .capT { fill: #171717; font: 500 12px "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif; }
+  </style>
+  <rect width="720" height="712" fill="#FFFFFF" />
+  <defs>
+    <marker id="bbAb" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+      <path class="arrowB" d="M1 1 L7 4 L1 7 Z" />
+    </marker>
+    <marker id="bbAn" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+      <path class="arrowN" d="M1 1 L7 4 L1 7 Z" />
+    </marker>
+  </defs>
+  <rect class="boundary" x="40" y="280" width="640" height="382" rx="12" />
+  <text class="ctitle" x="60" y="308">模拟器核心 · bluesim.exe（单线程 · 1:1 实时）</text>
+  <path class="connB" d="M360 104 V154" marker-end="url(#bbAb)" />
+  <path class="connB" d="M360 224 V276" marker-end="url(#bbAb)" />
+  <path class="conn" d="M354 382 V406" marker-end="url(#bbAn)" />
+  <path class="conn" d="M366 406 V382" marker-end="url(#bbAn)" />
+  <path class="conn" d="M354 470 V494" marker-end="url(#bbAn)" />
+  <path class="conn" d="M366 494 V470" marker-end="url(#bbAn)" />
+  <path class="conn" d="M354 558 V582" marker-end="url(#bbAn)" />
+  <path class="conn" d="M366 582 V558" marker-end="url(#bbAn)" />
+  <rect class="cap" x="372" y="114" width="212" height="24" rx="8" />
+  <text class="capT" x="382" y="130">Debug IPC · 命名管道 v1.0</text>
+  <rect class="cap" x="372" y="232" width="182" height="24" rx="8" />
+  <text class="capT" x="382" y="248">命令队列 · owner 线程</text>
+  <rect class="nodeR ext" x="210" y="40" width="300" height="64" rx="8" />
+  <text class="t" x="230" y="66">Keil µVision</text>
+  <text class="s" x="230" y="88">BlueBridgeAGDI.dll · AGDI 调试驱动</text>
+  <rect class="nodeR" x="140" y="160" width="440" height="64" rx="8" />
+  <text class="t" x="160" y="186">调试接口层</text>
+  <text class="s" x="160" y="208">IDebugTarget · 虚拟烧录（staging + 原子提交）</text>
+  <rect class="nodeR" x="72" y="322" width="576" height="56" rx="8" />
+  <text class="t" x="92" y="346">① Qt 6 GUI 层</text>
+  <text class="s" x="92" y="366">板面视图 · Signals 页 · Serial 串口终端 · Run/Step 控制</text>
+  <rect class="nodeR" x="72" y="410" width="576" height="56" rx="8" />
+  <text class="t" x="92" y="434">② 板级模型 CT117E-M4</text>
+  <text class="s" x="92" y="454">LCD · 8×LED · 按键 B1–B4 · 电位器 R37/R38 · PA15/PB4 脉冲 · PA7 PWM</text>
+  <rect class="nodeR" x="72" y="498" width="576" height="56" rx="8" />
+  <text class="t" x="92" y="522">③ STM32G431 外设模型</text>
+  <text class="s" x="92" y="542">GPIO · TIM · ADC · USART · 虚拟 Flash 128 KiB · SRAM/CCM</text>
+  <rect class="nodeR" x="72" y="586" width="576" height="56" rx="8" />
+  <text class="t" x="92" y="610">④ CPU 层（Unicorn）</text>
+  <text class="s" x="92" y="630">Cortex-M4F @ 80 MHz · 真实 ARM 指令 · 精确单步</text>
+  <text class="s" x="360" y="684" text-anchor="middle">固件来源：Keil 编译产物（调试时自动下载）或 GUI「Open HEX」载入示例固件</text>
+</svg>

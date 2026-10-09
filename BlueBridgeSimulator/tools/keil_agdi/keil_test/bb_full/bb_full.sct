@@ -1,0 +1,22 @@
+; bb_full scatter file -- same memory map as the gcc twin
+; (firmware/test_full/linker.ld: flash 128 KiB @ 0x08000000, SRAM @ 0x20000000).
+;
+; One deliberate difference from the auto-generated layout: the self-test
+; mailbox in main.c (`g_mailbox`, section .selfdata) is pinned at 0x20000000,
+; exactly like the gcc build, so the fixed address contract in the main.c
+; header holds for both builds and the Keil Memory window can watch it at
+; 0x20000000.
+LR_IROM1 0x08000000 0x00020000  {      ; load region: flash, 128 KiB
+  ER_IROM1 0x08000000 0x00020000  {    ; vectors + code + rodata
+    *.o (RESET, +First)
+    *(InRoot$$Sections)                ; C runtime root / scatterload
+    .ANY (+RO)
+    .ANY (+XO)
+  }
+  RW_SELF 0x20000000 0x00000080  {     ; mailbox, fixed address (17 words)
+    *(.selfdata)
+  }
+  RW_IRAM1 0x20000080 0x00007F80  {    ; all other RW + ZI (incl. stack)
+    .ANY (+RW +ZI)
+  }
+}

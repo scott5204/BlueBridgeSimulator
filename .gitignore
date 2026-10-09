@@ -1,0 +1,46 @@
+# ---- IDE / build caches ----
+.idea/
+cmake-build-debug/
+**/cmake-build-debug/
+
+# ---- local toolchains & big archives (not part of the project) ----
+# NOTE: `tools/*` (anchored, contents only) instead of `tools/` so that a nested
+# project dir (BlueBridgeSimulator/tools/keil_agdi) can be re-included by its own
+# .gitignore. Git cannot re-include files below an excluded *directory*.
+tools/*
+unicorn-2.1.4/bindings/zig/tools/
+/bin/
+unicorn-2.1.4.tar.gz
+unicorn-2.1.4/build-mingw/
+
+# ---- simulator build outputs / old distribution zip ----
+BlueBridgeSimulator/build/*
+BlueBridgeSimulator/release.zip
+
+# ---- vendor / competition reference material (kept local, not redistributed) ----
+SCH_CT117E_M4_V1.1.pdf
+液晶控制器芯片资料/
+蓝桥杯LCD驱动/
+
+# ---- user's own firmware project (kept local only) ----
+test32/
+
+# ---- scratch probe / dump files at repo root ----
+probe15*.txt
+selftest_*.txt
+tim_*.txt
+tim_*.csv
+tim_af_*.py
+firmware_disasm.txt
+firmware_symbols.txt
+schematic_*.txt
+schematic_words.tsv
+aqtinstall.log
+unicorn_pkg_files.txt
+nuttx_g4xxr_pinmap.h
+stm32g4_zephyr.dtsi
+g431_tim_af.csv
+tim_af_table.txt
+
+# ---- internal handoff document (kept local only, not published) ----
+PROJECT_HANDOFF.md

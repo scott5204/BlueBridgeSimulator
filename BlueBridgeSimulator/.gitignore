@@ -1,0 +1,31 @@
+# build outputs (the former freeze-forensics files in build/ were removed in
+# B.4.4, spec section 21)
+build/*
+cmake-build-debug/
+release.zip
+dist/
+# release\ is the refreshed portable build (binaries etc.); only the quick-start
+# README is a source artifact used by package_release.ps1
+release/*
+!release/README.txt
+tools/*
+!tools/keil_agdi/
+!tools/keil_agdi/**
+tools/keil_agdi/vendor/agdi_sdk/
+tools/keil_agdi/build/
+tools/keil_agdi/keil_test/**/UVBuild/
+tools/keil_agdi/keil_test/**/DebugConfig/
+tools/keil_agdi/keil_test/**/RTE/
+tools/keil_agdi/keil_test/lifecycle/
+tools/keil_agdi/keil_test/**/*.uvguix*
+tools/keil_agdi/keil_test/**/*.map
+tools/keil_agdi/keil_test/b1_*.txt
+firmware/*/*.map
+*.o
+*.obj
+
+# internal engineering reports (kept local, not published)
+tools/keil_agdi/B3_REPORT.md
+tools/keil_agdi/B4_REPORT.md
+tools/keil_agdi/AGDI_ABI_NOTES.md
+tools/keil_agdi/manual_keil_test.md

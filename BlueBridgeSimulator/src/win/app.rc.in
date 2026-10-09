@@ -1,0 +1,30 @@
+#include <winver.h>
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION @APP_VER_COMMA@
+ PRODUCTVERSION @APP_VER_COMMA@
+ FILEFLAGSMASK 0x3fL
+ FILEFLAGS 0x0L
+ FILEOS 0x40004L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "CompanyName", "BlueBridgeSimulator"
+            VALUE "FileDescription", "BlueBridgeSimulator - CT117E-M4 (STM32G431RBT6) virtual board"
+            VALUE "FileVersion", "@APP_VERSION@"
+            VALUE "InternalName", "bluesim"
+            VALUE "OriginalFilename", "bluesim.exe"
+            VALUE "ProductName", "BlueBridgeSimulator"
+            VALUE "ProductVersion", "@APP_VERSION@"
+            VALUE "Comments", "Unsigned binary. All-software simulator for the BlueBridge CT117E-M4 competition board."
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

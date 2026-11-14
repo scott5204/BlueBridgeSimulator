@@ -5,7 +5,7 @@ project(BlueBridgeSimulator LANGUAGES C CXX)
 # Product version (Windows version resource + packaging; spec B.4.4 section 40).
 # The packaging script passes -DAPP_VERSION=<VERSION.txt>; the cache default
 # keeps a plain `cmake -S . -B build` working.
-set(APP_VERSION "1.0.0" CACHE STRING "BlueBridgeSimulator product version")
+set(APP_VERSION "1.0.1" CACHE STRING "BlueBridgeSimulator product version")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "stm32/tim/Timer.h"
+#include "stm32/Stm32G431.h"
 
 static int g_failures = 0;
 #define CHECK(cond)                                                      \
@@ -243,8 +244,9 @@ int main() {
 
         const int irqBefore = f.irqCount;
         f.tim.onChannelPinLevel(1, true, f.now);   // rising edge
-        CHECK_EQ(f.rd(Timer::R_CCR1 + 4), 12345u);  // captured value
         CHECK((f.rd(Timer::R_SR) & 0x4u) != 0);     // CC2IF
+        CHECK_EQ(f.rd(Timer::R_CCR1 + 4), 12345u);  // read acknowledges CC2IF
+        CHECK_EQ(f.rd(Timer::R_SR) & 0x4u, 0u);
         CHECK_EQ(f.irqCount, irqBefore + 1);
 
         // falling edge must not capture while only rising is selected
@@ -257,8 +259,8 @@ int main() {
         // CC2P = 1 -> falling edge captures
         f.wr(Timer::R_CCER, 0x0030u);
         f.tim.onChannelPinLevel(1, false, f.now);
-        CHECK_EQ(f.rd(Timer::R_CCR1 + 4), 12445u);
         CHECK((f.rd(Timer::R_SR) & 0x4u) != 0);
+        CHECK_EQ(f.rd(Timer::R_CCR1 + 4), 12445u);
 
         // CCxE = 0 -> capture disabled
         f.wr(Timer::R_SR, ~0x4u);
@@ -283,6 +285,99 @@ int main() {
         const uint32_t second = f.rd(Timer::R_CCR1 + 4);
         CHECK_EQ(first, 0xFF00u);
         CHECK_EQ(second, 0x0100u);  // raw counter, no auto-correction
+    }
+
+
+    // Test A: PA15 -> AF1 -> TIM2_CH1, Reset/TI1FP1, 80 MHz / 80.
+    {
+        Stm32G431 soc;
+        soc.mmioWrite(0x4002104Cu, 1u, 4); // GPIOA clock
+        Timer& t = *soc.timerByName("TIM2");
+        auto wr = [&](uint32_t r, uint32_t v) { t.busWrite(t.base()+r, v, 4); };
+        auto rd = [&](uint32_t r) { return t.busRead(t.base()+r, 4); };
+        uint64_t now = 0;
+        auto run = [&](uint64_t cycles) { now += cycles; t.advance(now, cycles, HCLK, HCLK); };
+        auto pin = [&](bool high) { soc.gpioA.setExternalInputAt(1u<<15, high ? 1u<<15 : 0u, now); };
+        soc.mmioWrite(0x48000000u, 2u<<30, 4); // PA15 AF mode
+        soc.mmioWrite(0x48000024u, 1u<<28, 4); // PA15 AF1, existing router
+        pin(false);
+        wr(Timer::R_PSC,79); wr(Timer::R_ARR,0xFFFFFFFFu);
+        wr(Timer::R_CCMR1,1); wr(Timer::R_CCER,1);
+        wr(Timer::R_SMCR,0x54); wr(Timer::R_EGR,1); wr(Timer::R_SR,0);
+        int irq=0, dma=0;
+        t.setIrqCallback([&](int) { ++irq; CHECK_EQ(rd(Timer::R_CNT),0u); });
+        t.setTriggerDmaCallback([&] { ++dma; });
+        wr(Timer::R_DIER,2); wr(Timer::R_CR1,1);
+        run(123*80+37); pin(true); // deliberately partial first period/PSC phase
+        CHECK_EQ(rd(Timer::R_CCR1),123u); CHECK_EQ(rd(Timer::R_CNT),0u);
+        run(79); CHECK_EQ(rd(Timer::R_CNT),0u); // fractional PSC phase was reset
+        run(1); CHECK_EQ(rd(Timer::R_CNT),1u);
+        run(40000-80); pin(false); run(40000); pin(true);
+        CHECK_EQ(rd(Timer::R_CCR1),1000u);
+        for(int i=0;i<6;++i) {
+            wr(Timer::R_SR,0);
+            run(40000); pin(false); run(40000); pin(true);
+            CHECK_EQ(rd(Timer::R_SR)&0x43u,0x43u);
+            CHECK_EQ(rd(Timer::R_CCR1),1000u); CHECK_EQ(rd(Timer::R_CNT),0u); // CC1IF, TIF, UIF
+            CHECK_EQ(rd(Timer::R_PSC),79u); CHECK_EQ(rd(Timer::R_ARR),0xFFFFFFFFu);
+        }
+        CHECK_EQ(irq,8); CHECK_EQ(dma,0);
+        // Leave an unread capture pending before the next edge.
+        run(40000); pin(false); run(40000); pin(true);
+        // Overcapture flag, URS suppresses UIF but not TIF/TIE/TDE or preload.
+        wr(Timer::R_DIER,(1u<<6)|(1u<<14)); wr(Timer::R_CR1,5);
+        wr(Timer::R_SR,~1u); // retain previous CC1IF
+        run(40000); pin(false); run(40000); pin(true);
+        CHECK_EQ(rd(Timer::R_SR)&0x243u,0x242u); CHECK_EQ(dma,1);
+        CHECK_EQ(irq,11); // enabling TIE also services the already-pending TIF
+        // DIV2 capture still resets on EVERY trigger, even when CC1E is off.
+        wr(Timer::R_CCMR1,5); wr(Timer::R_DIER,2); wr(Timer::R_SR,0);
+        run(40000); pin(false); run(40000); pin(true);
+        CHECK_EQ(rd(Timer::R_SR)&2u,0u); CHECK_EQ(rd(Timer::R_CNT),0u);
+        run(40000); pin(false); run(40000); pin(true);
+        CHECK_EQ(rd(Timer::R_SR)&2u,2u); CHECK_EQ(rd(Timer::R_CCR1),1000u);
+        wr(Timer::R_CCER,0); run(40000); pin(false); run(40000); pin(true);
+        CHECK_EQ(rd(Timer::R_CNT),0u);
+        wr(Timer::R_CCER,1); wr(Timer::R_CCMR1,1); wr(Timer::R_DIER,0);
+        // UDIS keeps shadows unchanged but resets CNT and PSC phase.
+        wr(Timer::R_CR1,0x83); wr(Timer::R_PSC,159); wr(Timer::R_ARR,5000);
+        wr(Timer::R_SR,0); run(40037); pin(false); run(40000); pin(true);
+        CHECK_EQ(rd(Timer::R_CNT),0u); CHECK_EQ(rd(Timer::R_SR)&0x43u,0x42u);
+        run(79); CHECK_EQ(rd(Timer::R_CNT),0u); run(1); CHECK_EQ(rd(Timer::R_CNT),1u);
+        run(5000*80); CHECK_EQ(rd(Timer::R_CNT),5001u); // ARR shadow not transferred
+        // Re-enable UEV with URS=1: load PSC/ARR, no UIF/update interrupt.
+        pin(false); wr(Timer::R_CR1,0x85); wr(Timer::R_SR,0); pin(true);
+        CHECK_EQ(rd(Timer::R_SR)&1u,0u);
+        run(159); CHECK_EQ(rd(Timer::R_CNT),0u); run(1); CHECK_EQ(rd(Timer::R_CNT),1u);
+        run(5000*160); CHECK_EQ(rd(Timer::R_CNT),0u);
+        CHECK_EQ(rd(Timer::R_SR)&1u,1u); // actual overflow unaffected by URS
+        std::printf("Test A: PA15 Reset/TI1FP1, PSC, flags, URS/UDIS, DIV2 passed\n");
+    }
+
+    // Test B: same PA15 route, SMS disabled: raw capture remains cumulative.
+    {
+        Stm32G431 soc;
+        soc.mmioWrite(0x4002104Cu, 1u, 4); // GPIOA clock
+        Timer& t = *soc.timerByName("TIM2");
+        auto wr = [&](uint32_t r, uint32_t v) { t.busWrite(t.base()+r,v,4); };
+        auto rd = [&](uint32_t r) { return t.busRead(t.base()+r,4); };
+        soc.mmioWrite(0x48000000u,2u<<30,4);
+        soc.mmioWrite(0x48000024u,1u<<28,4);
+        uint64_t now=0; uint32_t prev=0;
+        wr(Timer::R_PSC,79); wr(Timer::R_ARR,0xFFFFFFFFu);
+        wr(Timer::R_CCMR1,1); wr(Timer::R_CCER,1);
+        wr(Timer::R_SMCR,0x50); wr(Timer::R_EGR,1); wr(Timer::R_SR,0);
+        wr(Timer::R_CR1,1);
+        for(int i=1;i<=7;++i) {
+            soc.gpioA.setExternalInputAt(1u<<15,0,now);
+            now+=80000; t.advance(now,80000,HCLK,HCLK);
+            soc.gpioA.setExternalInputAt(1u<<15,1u<<15,now);
+            const uint32_t cap=rd(Timer::R_CCR1);
+            CHECK_EQ(cap,uint32_t(i*1000)); CHECK_EQ(cap-prev,1000u);
+            CHECK_EQ(rd(Timer::R_CNT),cap); CHECK_EQ(rd(Timer::R_SR)&0x40u,0u);
+            prev=cap; wr(Timer::R_SR,0);
+        }
+        std::printf("Test B: PA15 free-running capture passed\n");
     }
 
     if (g_failures == 0) {

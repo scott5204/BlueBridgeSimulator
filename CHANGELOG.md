@@ -8,6 +8,10 @@
 
 ---
 
+## v1.0.1 — 2026-11-14
+
+修复 TIM2 TI1FP1 从模式复位，恢复直接读取 CCR1 测频，并通过全部 15 项回归测试。
+
 ## 阶段七-2B.2 — Keil AGDI ↔ Debug IPC（Registers / Memory / Reset / Step，2026-09-27）
 
 ### 新增（`BlueBridgeSimulator/tools/keil_agdi/`，不参与主 CMake / ctest）

@@ -11,7 +11,7 @@
 // TIM1/TIM8/TIM20/TIM15/TIM16/TIM17, basic TIM6/TIM7).
 //
 // Implemented (stage 3):
-//   CR1 (CEN/UDIS/URS/DIR/CMS/ARPE), CR2, SMCR (stored)
+//   CR1 (CEN/UDIS/URS/DIR/CMS/ARPE), CR2, SMCR (Reset/TI1FP1)
 //   DIER, SR (write-0-to-clear), EGR (UG/CCxG)
 //   CCMR1/CCMR2 (+CCxS/OCxM/OCxPE), CCER (CCxE/CCxP/CCxNP)
 //   CNT, PSC (buffered), ARR (buffered with ARPE), CCR1..4, BDTR (MOE)
@@ -21,9 +21,9 @@
 //
 // Not implemented (stored, no behavioural effect -- a firmware using them is
 // reported once through the logger): down / center-aligned counting, encoder
-// and slave/master modes, external clock mode, complementary outputs, dead
-// time, break, one-pulse mode, DMA burst, input filters and capture
-// prescalers (ICxF/ICxPSC are stored only).
+// and other slave/master modes, external clock mode, complementary outputs, dead
+// time, break, one-pulse mode, DMA transfers and input filters (ICxF stored only).
+// Trigger DMA requests can be observed through setTriggerDmaCallback().
 //
 // The timer knows nothing about pins or about the board: channel outputs are
 // published through the channel callback (driven/level + exact CPU cycle) and
@@ -82,6 +82,11 @@ public:
     // ---- NVIC ----
     void setIrqCallback(std::function<void(int irq)> fn) {
         irqCallback_ = std::move(fn);
+    }
+
+    // Request notification only: this model has no DMA controller/transfer engine.
+    void setTriggerDmaCallback(std::function<void()> fn) {
+        triggerDmaCallback_ = std::move(fn);
     }
 
     // ---- tracing (development aid, off by default) ----
@@ -154,6 +159,7 @@ private:
     uint32_t ccrAct_[4] = {0, 0, 0, 0};    // value used for compare/capture
     uint32_t ccrCaptured_[4] = {0, 0, 0, 0};
     uint32_t rcr_ = 0, dcr_ = 0, dmar_ = 0, af1_ = 0, af2_ = 0, tisel_ = 0;
+    uint8_t captureDivCount_[4] = {};
     uint32_t rep_ = 0;                     // repetition counter (advanced)
 
     // time base (integer, drift free)
@@ -173,6 +179,7 @@ private:
     bool warnedCenterAlign_ = false;
     bool warnedAdvanced_ = false;
 
+    std::function<void()> triggerDmaCallback_;
     ChannelOutFn channelOut_;
     std::function<void(int)> irqCallback_;
     std::function<void(const std::string&)> logger_;

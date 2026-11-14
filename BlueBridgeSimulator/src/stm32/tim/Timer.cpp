@@ -32,6 +32,7 @@ void Timer::reset() {
     arrPre_ = arrAct_ = counterMask();
     for (int i = 0; i < 4; i++) {
         ccrPre_[i] = ccrAct_[i] = ccrCaptured_[i] = 0;
+        captureDivCount_[i] = 0;
         outDriven_[i] = outLevel_[i] = inLevel_[i] = false;
     }
     rcr_ = dcr_ = dmar_ = af1_ = af2_ = tisel_ = 0;
@@ -119,7 +120,12 @@ uint32_t Timer::readReg(uint32_t regOff) {
         if (ch >= 4) break;
         // capture channels report the latched value, output channels the
         // preload value (RM0440 TIMx_CCRx behaviour)
-        return channelIsCapture(ch) ? ccrCaptured_[ch] : ccrPre_[ch];
+        if (channelIsCapture(ch)) {
+            // Reading an input CCR acknowledges CCxIF, but not CCxOF.
+            sr_ &= ~kCcIfBit(ch + 1);
+            return ccrCaptured_[ch];
+        }
+        return ccrPre_[ch];
     }
     case R_BDTR: return traits_.advanced ? bdtr_ : 0;
     case R_DCR: return dcr_;
@@ -153,11 +159,12 @@ void Timer::writeReg(uint32_t regOff, uint32_t value) {
         break;
     }
     case R_CR2: cr2_ = value; break;
-    case R_SMCR: smcr_ = value; break;  // slave mode not modelled
+    case R_SMCR: smcr_ = value; break;  // Reset/TI1FP1 handled on input edges
     case R_DIER:
         dier_ = value & 0xFFFFu;
         // enabling an interrupt whose flag is already set must request the IRQ
         if ((dier_ & kUie) && (sr_ & kUif)) fireIrq();
+        if ((dier_ & (1u << 6)) && (sr_ & (1u << 6))) fireIrq();
         for (int ch = 0; ch < 4; ch++)
             if ((dier_ & kCcIeBit(ch + 1)) && (sr_ & kCcIfBit(ch + 1)))
                 fireIrq();
@@ -181,14 +188,8 @@ void Timer::writeReg(uint32_t regOff, uint32_t value) {
         }
         if (ug) {
             cnt_ = 0;
-            // the prescaler buffer is reloaded and the counter restarted
-            pscAct_ = pscPre_;
-            pscUsed_ = pscAct_;
+            // CNT/PSC restart even when UDIS prevents a UEV.
             prescAcc_ = 0;
-            if (cr1_ & kCr1Arpe) arrAct_ = arrPre_;
-            for (int ch = 0; ch < 4; ch++)
-                if (ccmrByte(ccmrFor(ch), chInPair(ch)) & 0x8u)  // OCxPE
-                    ccrAct_[ch] = ccrPre_[ch];
             onUpdateEvent(/*fromUg=*/true);
             updateAllChannelOutputs(cpuCursor_);
             if (traceEvents_)
@@ -197,9 +198,12 @@ void Timer::writeReg(uint32_t regOff, uint32_t value) {
         }
         break;
     }
-    case R_CCMR1: ccmr1_ = value; updateAllChannelOutputs(cpuCursor_); break;
-    case R_CCMR2: ccmr2_ = value; updateAllChannelOutputs(cpuCursor_); break;
-    case R_CCER: ccer_ = value; updateAllChannelOutputs(cpuCursor_); break;
+    case R_CCMR1: captureDivCount_[0] = captureDivCount_[1] = 0; ccmr1_ = value; updateAllChannelOutputs(cpuCursor_); break;
+    case R_CCMR2: captureDivCount_[2] = captureDivCount_[3] = 0; ccmr2_ = value; updateAllChannelOutputs(cpuCursor_); break;
+    case R_CCER:
+        for (int ch = 0; ch < 4; ++ch)
+            if (!(value & (1u << (ch * 4)))) captureDivCount_[ch] = 0;
+        ccer_ = value; updateAllChannelOutputs(cpuCursor_); break;
     case R_CNT: cnt_ = value & counterMask(); break;
     case R_PSC:
         pscPre_ = value & 0xFFFFu;
@@ -243,6 +247,9 @@ void Timer::writeReg(uint32_t regOff, uint32_t value) {
 // update event
 // ---------------------------------------------------------------------------
 void Timer::onUpdateEvent(bool fromUg) {
+    // UDIS blocks the entire UEV, including preload transfers. Hardware reset
+    // of CNT/prescaler is performed by the caller independently of this path.
+    if (cr1_ & kCr1Udis) return;
     // prescaler buffer reload, autoreload preload, repetition counter
     pscAct_ = pscPre_;
     pscUsed_ = pscAct_;
@@ -304,20 +311,47 @@ void Timer::refreshChannelOutputs() {
 
 void Timer::onChannelPinLevel(int ch, bool level, uint64_t cpuCycle) {
     if (ch < 0 || ch >= 4) return;
+    const bool changed = inLevel_[ch] != level;
     inLevel_[ch] = level;
     if (!(cr1_ & kCr1Cen)) return;
-    if (!channelIsCapture(ch)) return;
-    if (!channelEnabled(ch)) return;
-    if (!captureEdgeMatches(ch, level)) return;
 
-    ccrCaptured_[ch] = cnt_;
-    ccrPre_[ch] = cnt_;  // what the firmware reads back
-    sr_ |= kCcIfBit(ch + 1);
-    if (dier_ & kCcIeBit(ch + 1)) fireIrq();
-    if (traceEvents_)
-        traceEvent(std::string("[") + traits_.name + "] CAPTURE CH" +
-                   std::to_string(ch + 1) + "=" + hex(cnt_) +
-                   (level ? " (rising)" : " (falling)"));
+    // TI1FP1 is upstream of IC1PSC and CC1E. SMS/TS have extension bits
+    // on G4; include those so unrelated modes cannot alias Reset/TI1FP1.
+    const bool resetTrigger = ch == 0 && changed &&
+        (smcr_ & 0x10007u) == 4u && (smcr_ & 0x300070u) == 0x50u &&
+        captureEdgeMatches(0, level);
+    const uint32_t captured = cnt_;
+    bool captureIrq = false;
+    if (channelIsCapture(ch) && channelEnabled(ch) &&
+        captureEdgeMatches(ch, level)) {
+        const unsigned div = 1u << ((ccmrByte(ccmrFor(ch), chInPair(ch)) >> 2) & 3u);
+        if (++captureDivCount_[ch] >= div) {
+            captureDivCount_[ch] = 0;
+            // A second capture before CCxIF is cleared is an overcapture.
+            if (sr_ & kCcIfBit(ch + 1)) sr_ |= 1u << (ch + 9);
+            ccrCaptured_[ch] = captured;
+            ccrPre_[ch] = captured;
+            sr_ |= kCcIfBit(ch + 1);
+            captureIrq = (dier_ & kCcIeBit(ch + 1)) != 0;
+            if (traceEvents_)
+                traceEvent(std::string("[") + traits_.name + "] CAPTURE CH" +
+                           std::to_string(ch + 1) + "=" + hex(captured));
+        }
+    }
+    if (resetTrigger) {
+        // Capture first, then restart CNT and the internal PSC phase.
+        // PSC/ARR software registers are untouched; UEV loads shadows only
+        // when UDIS=0. URS controls UIF, not the hardware restart or TIF.
+        cnt_ = 0;
+        prescAcc_ = 0;
+        sr_ |= 1u << 6;  // TIF
+        onUpdateEvent(/*fromUg=*/true); // software/trigger source for URS
+        updateAllChannelOutputs(cpuCycle);
+        if (dier_ & (1u << 6)) fireIrq(); // TIE, independent of UIE/URS
+        if ((dier_ & (1u << 14)) && triggerDmaCallback_) triggerDmaCallback_();
+    }
+    // Notify after latching and hardware reset, so observers see final state.
+    if (captureIrq) fireIrq();
 }
 
 // ---------------------------------------------------------------------------
